@@ -1,5 +1,5 @@
 
-## 整体流程概述
+# 整体流程概述
 
 1. **启动脚本**: <mcfile name="collect_data.sh" path="/Users/mac/Downloads/RoboTwin/collect_data.sh"></mcfile> 接收任务名称、配置文件和GPU ID参数，然后调用 <mcfile name="collect_data.py" path="/Users/mac/Downloads/RoboTwin/script/collect_data.py"></mcfile>
 
@@ -52,7 +52,68 @@
 
 这个系统巧妙地将机器人任务的结构化信息转换为自然语言指令，为多模态机器人学习提供了丰富的语言监督信号。
         
+# RoboTwin 项目中指令生成的详细过程
+基于对代码的深入分析，我可以为您详细描述 RoboTwin 项目中指令（instruction）的生成过程：
 
+### 1. 整体架构
+指令生成是一个 独立于视频生成的后处理步骤 ，主要通过 `generate_episode_instructions.py` 脚本实现，并通过 `gen_episode_instructions.sh` 脚本调用。
+
+### 2. 核心输入文件 2.1 任务指令模板文件
+- 位置 : description/task_instruction/{task_name}.json
+- 内容 : 包含 seen 和 unseen 两类指令模板
+- 示例 : `place_object_basket.json` 中定义了占位符 {A} 、 {B} 、 {a} 、 {b} 的含义和多种指令模板 2.2 物体描述文件
+- 位置 : description/objects_description/{object_id}/{variant}.json
+- 结构 : 每个文件包含 raw_description 、 seen 和 unseen 三个字段
+- 示例 : 001_bottle/base0.json 包含瓶子的多种描述变体 2.3 场景信息文件
+- 位置 : data/{task_name}/{setting}/scene_info.json
+- 内容 : 包含每个 episode 的参数信息，用于替换指令模板中的占位符
+### 3. 指令生成流程 3.1 数据加载阶段
+1. 加载任务指令模板 : `load_task_instructions` 从任务配置文件中读取 seen 和 unseen 指令模板
+2. 加载场景信息 : `load_scene_info` 读取每个 episode 的参数
+3. 提取 episode 参数 : `extract_episodes_from_scene_info` 从场景信息中提取参数字典 3.2 指令过滤阶段
+`filter_instructions` 函数执行以下操作：
+
+- 占位符提取 : 使用正则表达式 {([^}]+)} 提取指令模板中的所有占位符
+- 参数匹配 : 确保指令模板的占位符与 episode 参数完全匹配
+- 特殊处理 : 支持不包含手臂占位符 {[a-z]} 的指令
+- 随机化 : 对符合条件的指令进行随机排序 3.3 占位符替换阶段
+Seen 指令生成 ( `replace_placeholders` ):
+
+- 检查参数值是否为物体描述文件路径
+- 如果是文件路径，从对应 JSON 文件的 seen 列表中随机选择描述
+- 对于手臂占位符 {[a-z]} ，添加 "the" 前缀和 "arm" 后缀
+- 为物体描述添加 "the" 前缀
+Unseen 指令生成 ( `replace_placeholders_unseen` ):
+
+- 优先使用物体描述文件中的 unseen 列表
+- 如果 unseen 为空，回退到 seen 列表
+- 其他处理逻辑与 seen 指令相同 3.4 批量生成阶段
+`generate_episode_descriptions` 函数：
+
+- 遍历每个 episode
+- 分别生成 seen 和 unseen 指令
+- 支持设置最大生成数量限制
+- 通过循环和随机选择实现指令多样性 3.5 结果保存阶段
+`save_episode_descriptions` 函数：
+
+- 创建输出目录 data/{task_name}/{setting}/instructions/
+- 为每个 episode 生成 episode{index}.json 文件
+- 文件包含 seen 和 unseen 两个字段的指令列表
+### 4. 关键特性 4.1 多样性机制
+- 模板多样性 : 每个任务有多个指令模板
+- 描述多样性 : 每个物体有多种语言描述
+- 随机选择 : 在生成过程中随机选择模板和描述
+- Seen/Unseen 分离 : 支持训练和测试时的不同描述 4.2 灵活性设计
+- 占位符系统 : 支持任意数量和类型的占位符
+- 条件匹配 : 智能匹配指令模板与 episode 参数
+- 错误处理 : 完善的文件存在性检查和错误提示 4.3 扩展性
+- 模块化设计 : 各功能函数独立，易于扩展
+- 配置驱动 : 通过配置文件控制生成参数
+- 批处理支持 : 支持大规模 episode 的批量处理
+### 5. 调用方式
+```
+
+```
           
 ## 关于指令生成与视频的关系
 
